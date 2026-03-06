@@ -16,7 +16,7 @@ public final class UserFactory {
         u.setRole((String) row.get("role"));
         u.setFullName((String) row.get("full_name"));
         u.setEmail((String) row.get("email"));
-        u.setActive(row.get("is_active") != null && ((Number) row.get("is_active")).intValue() == 1);
+        u.setActive(isActive(row.get("is_active")));
         Object ca = row.get("created_at");
         u.setCreatedAt(ca instanceof Instant ? (Instant) ca : null);
 
@@ -30,5 +30,12 @@ public final class UserFactory {
             u.setCanConfigureRates(false);
         }
         return u;
+    }
+
+    private static boolean isActive(Object value) {
+        if (value == null) return false;
+        if (value instanceof Boolean) return (Boolean) value;
+        if (value instanceof Number) return ((Number) value).intValue() == 1;
+        return false;
     }
 }

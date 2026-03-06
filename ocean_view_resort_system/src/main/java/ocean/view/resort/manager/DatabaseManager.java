@@ -52,5 +52,4 @@ public class DatabaseManager {
     public interface ConnectionCallback<T> {
         T run(Connection conn) throws SQLException;
     }
-
 }
