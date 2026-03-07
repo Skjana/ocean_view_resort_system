@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ocean View Resort - HRMS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" />
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="login-screen" class="screen">
+    <div class="login-card">
+        <div class="login-header">
+            <h1>Ocean View Resort</h1>
+            <p>Hotel Management System - Galle, Sri Lanka</p>
+        </div>
+        <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="login-username" placeholder="Enter username" />
+            <span id="err-username" class="error"></span>
+        </div>
+        <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="login-password" placeholder="Enter password" />
+            <span id="err-password" class="error"></span>
+        </div>
+        <button id="btn-login" class="btn-primary">Sign In</button>
+        <p class="demo-hint"><strong>admin</strong> |<strong>staff</strong></p>
+    </div>
+</div>
+<div id="app-screen" class="screen hidden">
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <div><strong>Ocean View</strong><br><span class="accent">Resort HRMS</span></div>
+        </div>
+        <nav id="nav-menu"></nav>
+        <div class="sidebar-footer">
+            <div id="user-info" class="user-info"></div>
+            <button id="btn-logout" class="btn-logout">Sign Out</button>
+        </div>
+    </aside>
+    <main class="main-content">
+        <div id="page-content"></div>
+    </main>
+</div>
+<div id="toast-container" class="toast-container"></div>
+<script src="app.js"></script>
+</body>
+</html>
