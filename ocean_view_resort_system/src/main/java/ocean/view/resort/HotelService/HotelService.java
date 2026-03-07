@@ -2,11 +2,9 @@ package ocean.view.resort.HotelService;
 
 import ocean.view.resort.manager.DatabaseManager;
 import ocean.view.resort.manager.UserFactory;
-import ocean.view.resort.model.BillResult;
-import ocean.view.resort.model.Reservation;
-import ocean.view.resort.model.Room;
-import ocean.view.resort.model.User;
+import ocean.view.resort.model.*;
 import ocean.view.resort.observer.EventBus;
+import ocean.view.resort.repository.ExtraChargesRepository;
 import ocean.view.resort.repository.ReservationRepository;
 import ocean.view.resort.repository.RoomRepository;
 import ocean.view.resort.repository.UserRepository;
@@ -24,13 +22,15 @@ public class HotelService {
     private final UserRepository userRepository;
     private final ReservationRepository reservationRepository;
     private final RoomRepository roomRepository;
+    private final ExtraChargesRepository extraChargesRepository;
     private final EventBus eventBus;
 
     public HotelService(UserRepository userRepository, ReservationRepository reservationRepository,
-                        RoomRepository roomRepository,EventBus eventBus) {
+                        RoomRepository roomRepository,ExtraChargesRepository extraChargesRepository,EventBus eventBus) {
         this.userRepository = userRepository;
         this.reservationRepository = reservationRepository;
         this.roomRepository = roomRepository;
+        this.extraChargesRepository = extraChargesRepository;
         this.eventBus = eventBus;
     }
 
@@ -165,6 +165,13 @@ public class HotelService {
         sb.append("<p style='margin-top:24px'>Thank you for staying with us.</p></body></html>");
         return sb.toString();
     }
+
+    // ---------- Extra charges (mini-bar, room service) ----------
+    public List<ExtraCharge> getExtraCharges(String reservationId) { return extraChargesRepository.findByReservationId(reservationId); }
+    public void addExtraCharge(String reservationId, String description, BigDecimal amount, String createdBy) {
+        extraChargesRepository.save(reservationId, description, amount, createdBy);
+    }
+    public void removeExtraCharge(int id) { extraChargesRepository.delete(id); }
 
     private static String escapeHtml(String s) {
         if (s == null) return "";
