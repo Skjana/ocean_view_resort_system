@@ -8,6 +8,7 @@ import java.sql.ResultSet;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 public class RoomRepository {
 
@@ -24,6 +25,18 @@ public class RoomRepository {
         r.setAvailable(rs.getObject("is_available", Integer.class) != null && rs.getInt("is_available") == 1);
         try { r.setRoomStatus(rs.getString("room_status")); } catch (Exception ignored) { }
         return r;
+    }
+
+    /** Update room status (AVAILABLE, CLEANING, OUT_OF_ORDER). */
+    public void updateRoomStatus(String roomId, String status) {
+        DatabaseManager.getInstance().execute(conn -> {
+            try (PreparedStatement ps = conn.prepareStatement("UPDATE rooms SET room_status = ? WHERE id = ?")) {
+                ps.setString(1, status);
+                ps.setString(2, roomId);
+                ps.executeUpdate();
+            }
+            return null;
+        });
     }
 
     public List<Room> findAll() {
@@ -52,5 +65,14 @@ public class RoomRepository {
         });
     }
 
-
+    public Optional<Room> findById(String id) {
+        return DatabaseManager.getInstance().execute(conn -> {
+            try (PreparedStatement ps = conn.prepareStatement("SELECT * FROM rooms WHERE id = ?")) {
+                ps.setString(1, id);
+                try (ResultSet rs = ps.executeQuery()) {
+                    return rs.next() ? Optional.of(mapRow(rs)) : Optional.empty();
+                }
+            }
+        });
+    }
 }

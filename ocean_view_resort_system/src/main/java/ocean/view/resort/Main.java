@@ -4,6 +4,9 @@ import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import ocean.view.resort.HotelService.HotelService;
 import ocean.view.resort.manager.DatabaseManager;
+import ocean.view.resort.model.BillResult;
+import ocean.view.resort.model.Reservation;
+import ocean.view.resort.model.Room;
 import ocean.view.resort.model.User;
 import ocean.view.resort.observer.AuditLogListener;
 import ocean.view.resort.observer.EventBus;
@@ -19,6 +22,7 @@ import java.io.InputStreamReader;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Collectors;
@@ -53,10 +57,12 @@ public class Main {
         UserRepository userRepository = new UserRepository();
         ReservationRepository reservationRepository = new ReservationRepository();
         RoomRepository roomRepository = new RoomRepository();
+
         EventBus eventBus = new EventBus();
         AuditLogListener auditLogListener = new AuditLogListener(eventBus);
         auditLogListener.init();
-        hotelService = new HotelService(userRepository, reservationRepository, eventBus);
+        hotelService = new HotelService(userRepository, reservationRepository, roomRepository,
+                 eventBus);
 
         // HTTP server (JDK built-in): /api = REST, / = static UI (HTML/JS/CSS)
         com.sun.net.httpserver.HttpServer server = com.sun.net.httpserver.HttpServer.create(new InetSocketAddress(port), 0);
@@ -109,18 +115,158 @@ public class Main {
             if (u.isEmpty()) return new ApiError(401, Map.of("error", "Invalid username or password"));
             return Map.of("user", mapUser(u.get()));
         }
+
         if (path.equals("/api/auth/logout") && "POST".equals(method)) {
             return Map.of("ok", true);
         }
+
         if (path.equals("/api/auth/me") && "GET".equals(method)) {
             if (user == null) return new ApiError(401, Map.of("error", "Not authenticated"));
             return mapUser(user);
         }
 
+        if (user == null) return new ApiError(401, Map.of("error", "Not authenticated"));
 
+        // Rooms
+        if (path.equals("/api/rooms") && "GET".equals(method)) {
+            return hotelService.getAllRooms().stream().map(Main::mapRoom).collect(Collectors.toList());
+        }
+        if (path.equals("/api/rooms/available") && "GET".equals(method)) {
+            String roomType = getQueryParam(query, "roomType");
+            String checkIn = getQueryParam(query, "checkIn");
+            String checkOut = getQueryParam(query, "checkOut");
+            if (roomType == null || checkIn == null || checkOut == null)
+                return new ApiError(400, Map.of("error", "roomType, checkIn, checkOut required"));
+            return hotelService.getAvailableRooms(roomType, java.time.LocalDate.parse(checkIn), java.time.LocalDate.parse(checkOut))
+                    .stream().map(Main::mapRoom).collect(Collectors.toList());
+        }
 
+        // Reservation
+        if (path.equals("/api/reservations") && "GET".equals(method)) {
+            List<Reservation> list = hotelService.getAllReservations();
+            String status = getQueryParam(query, "status");
+            String search = getQueryParam(query, "search");
+            if (search != null && !search.isBlank()) list = hotelService.findReservationsByGuest(search);
+            if (status != null && !status.isBlank() && !"ALL".equals(status))
+                list = list.stream().filter(r -> status.equals(r.getStatus())).collect(Collectors.toList());
+            return list.stream().map(Main::mapReservation).collect(Collectors.toList());
+        }
+        if (path.startsWith("/api/reservations/") && path.length() > 18) {
+            String id = path.substring(18).split("/")[0];
+            if ("GET".equals(method)) {
+                var opt = hotelService.getReservationById(id).map(Main::mapReservationWithRoom);
+                if (opt.isEmpty()) return new ApiError(404, Map.of("error", "Not found"));
+                return opt.get();
+            }
+            if (path.endsWith("/cancel") && "POST".equals(method)) {
+                if (hotelService.cancelReservation(id, user.getUsername()).isEmpty()) return new ApiError(404, Map.of("error", "Not found"));
+                return Map.of("ok", true);
+            }
+            if (path.endsWith("/checkout") && "POST".equals(method)) {
+                var r = hotelService.checkOut(id);
+                if (r.isEmpty()) return new ApiError(404, Map.of("error", "Not found"));
+                return Map.of("reservation", mapReservation(r.get().getReservation()), "bill", mapBill(r.get().getBill()));
+            }
+        }
+
+        // Billing (check /print and /extra-charges before generic GET so resId is not "RES-0006/print")
+        if (path.startsWith("/api/billing/bill/") && path.endsWith("/print") && path.length() > 25 && "GET".equals(method)) {
+            String resId = path.substring(18, path.length() - 6);
+            String html = hotelService.getBillPrintHtml(resId);
+            return Map.of("html", html);
+        }
+
+        // Users (admin-only: list, add, edit, delete staff)
+        if (path.equals("/api/users") && "GET".equals(method)) {
+            if (!user.isCanManageUsers()) return new ApiError(403, Map.of("error", "Admin only"));
+            return hotelService.getAllUsers();
+        }
+        if (path.startsWith("/api/users/") && path.length() > 11 && "GET".equals(method)) {
+            String userId = path.substring(11).split("/")[0].trim();
+            if (userId.isEmpty()) return new ApiError(400, Map.of("error", "User ID required"));
+            if (!user.isCanManageUsers()) return new ApiError(403, Map.of("error", "Admin only"));
+            var uOpt = hotelService.getUserById(userId);
+            if (uOpt.isEmpty()) return new ApiError(404, Map.of("error", "User not found"));
+            return mapUserForAdmin(uOpt.get());
+        }
 
         return new ApiError(404, Map.of("error", "Not found"));
+    }
+
+    private static String getQueryParam(String query, String name) {
+        if (query == null || query.isEmpty()) return null;
+        for (String pair : query.split("&")) {
+            int eq = pair.indexOf('=');
+            if (eq > 0 && name.equals(pair.substring(0, eq)))
+                return java.net.URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8);
+        }
+        return null;
+    }
+
+    private static Map<String, Object> mapUserForAdmin(User u) {
+        Map<String, Object> m = mapUser(u);
+        m.put("full_name", u.getFullName());
+        return m;
+    }
+
+    // mappings
+    private static Map<String, Object> mapRoom(Room r) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("id", r.getId());
+        m.put("roomNumber", r.getRoomNumber());
+        m.put("roomType", r.getRoomType());
+        m.put("floor", r.getFloor());
+        m.put("maxOccupancy", r.getMaxOccupancy());
+        m.put("nightlyRate", r.getNightlyRate());
+        m.put("view", nullToEmpty(r.getViewDesc()));
+        m.put("amenities", r.getAmenities());
+        m.put("isAvailable", r.isAvailable());
+        m.put("roomStatus", r.getRoomStatus());
+        return m;
+    }
+
+    private static Map<String, Object> mapReservation(Reservation r) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("id", r.getId());
+        m.put("guestName", r.getGuestName());
+        m.put("guestAddress", nullToEmpty(r.getGuestAddress()));
+        m.put("contactNumber", r.getContactNumber());
+        m.put("email", nullToEmpty(r.getEmail()));
+        m.put("nationality", nullToEmpty(r.getNationality()));
+        m.put("roomId", r.getRoomId());
+        m.put("checkInDate", r.getCheckInDate().toString());
+        m.put("checkOutDate", r.getCheckOutDate().toString());
+        m.put("nights", r.getNights());
+        m.put("status", r.getStatus());
+        m.put("specialRequests", nullToEmpty(r.getSpecialRequests()));
+        m.put("subTotal", r.getSubTotal());
+        m.put("taxAmount", r.getTaxAmount());
+        m.put("discount", r.getDiscount());
+        m.put("total", r.getTotalAmount());
+        m.put("isLoyalty", r.isLoyalty());
+        m.put("createdBy", nullToEmpty(r.getCreatedBy()));
+        m.put("createdAt", r.getCreatedAt() != null ? r.getCreatedAt().toString() : "");
+        return m;
+    }
+
+    private static Map<String, Object> mapBill(BillResult b) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("subTotal", b.getSubTotal());
+        m.put("tax", b.getTax());
+        m.put("discount", b.getDiscount());
+        m.put("total", b.getTotal());
+        m.put("isLoyalty", b.isLoyalty());
+        m.put("nights", b.getNights());
+        m.put("nightlyRate", b.getNightlyRate());
+        m.put("roomType", nullToEmpty(b.getRoomType()));
+        m.put("roomNumber", nullToEmpty(b.getRoomNumber()));
+        return m;
+    }
+
+    private static Map<String, Object> mapReservationWithRoom(Reservation r) {
+        Map<String, Object> m = mapReservation(r);
+        hotelService.getRoomById(r.getRoomId()).ifPresent(room -> m.put("roomNumber", room.getRoomNumber()));
+        return m;
     }
 
     private static Map<String, Object> mapUser(User u) {
@@ -193,6 +339,10 @@ public class Main {
         ex.sendResponseHeaders(status, bytes.length);
         ex.getResponseBody().write(bytes);
         ex.close();
+    }
+
+    private static String nullToEmpty(String s) {
+        return s == null ? "" : s;
     }
 
     private static class ApiError {

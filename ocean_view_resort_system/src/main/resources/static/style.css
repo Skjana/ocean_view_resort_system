@@ -363,7 +363,7 @@ table td
     }
 
 .badge.confirmed {
-    background: rgba(0,121,107,0.15);
+    /*background: rgba(0,121,107,0.15); */
     color: #00796b;
     }
 
